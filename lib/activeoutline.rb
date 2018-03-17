@@ -12,9 +12,9 @@ class ActiveOutline
 
   class LinkReader
     
-    def initialize(filepath, debug: false)
+    def initialize(filepath, debug: false, default_url: nil)
     
-      @filepath, @debug = filepath, debug
+      @filepath, @debug, @default_url = filepath, debug, default_url
       read filepath    
       
     end
@@ -39,10 +39,31 @@ class ActiveOutline
       s, _ = RXFHelper.read(filepath)      
       puts 's ' + s.inspect if @debug
       
-      @links = PolyrexLinks.new.import(s)
+      s2 = if @default_url then
+        
+        # set a default url for entries which don't have one
+        s.lines.map do |x|
+          x =~ /:\/\// ? x : x.chomp + ' ' + @default_url \
+              + URI.encode(x.strip) + "\n"
+        end.join
+        
+      else
+        s
+      end
+      
+      if @debug then
+        puts 's2: ' + s2.inspect
+        puts 's: ' + s.inspect
+      end
+
+      if s2 != s and RXFHelper.writeable?(filepath) then
+        RXFHelper.write filepath, s2
+      end
+      
+      @links = PolyrexLinks.new.import(s2)
       @ftx = FileTreeXML.new(s.lines.map {|x| x[/^ *\S+/]}.join("\n"), 
                              debug: @debug)
-    end
+    end    
     
     def reload()
       read @filepath
@@ -52,19 +73,18 @@ class ActiveOutline
   end
   
   def initialize(filepath='outline.txt', host: 'localhost', 
-                 port: '60700', debug: false)
+                 port: '60700', debug: false, default_url: nil)
 
-    @host, @port = host, port
-
-    @lr = LinkReader.new(filepath, debug: debug)
+    @filepath, @host, @port, @debug = filepath, host, port, debug
+    @default_url = default_url
 
   end
 
   def start()
 
-    DRb.start_service "druby://#{@host}:#{@port}", @lr
+    lr = LinkReader.new(@filepath, debug: @debug, default_url: @default_url)
+    DRb.start_service "druby://#{@host}:#{@port}", lr
     DRb.thread.join
 
   end
 end
-
